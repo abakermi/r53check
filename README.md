@@ -13,7 +13,7 @@ A simple Go command-line tool to check domain availability using AWS Route 53 Do
 Install directly from GitHub:
 
 ```sh
-go install github.com/abakermi/r53check@latest
+go install github.com/abakermi/r53check/cmd@latest
 ```
 
 Or clone the repository and build locally:
