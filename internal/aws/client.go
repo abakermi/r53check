@@ -13,6 +13,7 @@ import (
 // Route53Client interface defines the methods needed for domain availability checking
 type Route53Client interface {
 	CheckDomainAvailability(ctx context.Context, domain string) (*route53domains.CheckDomainAvailabilityOutput, error)
+	ListPrices(ctx context.Context, tld string) (*route53domains.ListPricesOutput, error)
 }
 
 // Client wraps the AWS Route 53 Domains client
@@ -40,6 +41,24 @@ func (c *Client) CheckDomainAvailability(ctx context.Context, domain string) (*r
 	result, err := c.route53Client.CheckDomainAvailability(ctx, input)
 	if err != nil {
 		return nil, errors.WrapAWSError(err, "route53domains", "CheckDomainAvailability")
+	}
+
+	return result, nil
+}
+
+// ListPrices gets pricing information for a specific TLD
+func (c *Client) ListPrices(ctx context.Context, tld string) (*route53domains.ListPricesOutput, error) {
+	if tld == "" {
+		return nil, errors.NewValidationError(tld, "tld", "TLD cannot be empty", nil)
+	}
+
+	input := &route53domains.ListPricesInput{
+		Tld: aws.String(tld),
+	}
+
+	result, err := c.route53Client.ListPrices(ctx, input)
+	if err != nil {
+		return nil, errors.WrapAWSError(err, "route53domains", "ListPrices")
 	}
 
 	return result, nil
