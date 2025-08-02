@@ -477,9 +477,34 @@ func TestCheckAvailability_ErrorHandling(t *testing.T) {
 				return
 			}
 
-			// Check if it's the right type of error
-			if !errors.As(err, &tc.expectedType) {
-				t.Errorf("expected error type %T, got %T", tc.expectedType, err)
+			// Check if it's the right type of error using type assertion instead of errors.As
+			switch tc.expectedType.(type) {
+			case *customErrors.ValidationError:
+				var validationErr *customErrors.ValidationError
+				if !errors.As(err, &validationErr) {
+					t.Errorf("expected ValidationError, got %T", err)
+					return
+				}
+			case *customErrors.AuthenticationError:
+				var authErr *customErrors.AuthenticationError
+				if !errors.As(err, &authErr) {
+					t.Errorf("expected AuthenticationError, got %T", err)
+					return
+				}
+			case *customErrors.AuthorizationError:
+				var authzErr *customErrors.AuthorizationError
+				if !errors.As(err, &authzErr) {
+					t.Errorf("expected AuthorizationError, got %T", err)
+					return
+				}
+			case *customErrors.APIError:
+				var apiErr *customErrors.APIError
+				if !errors.As(err, &apiErr) {
+					t.Errorf("expected APIError, got %T", err)
+					return
+				}
+			default:
+				t.Errorf("unexpected expected type: %T", tc.expectedType)
 				return
 			}
 
