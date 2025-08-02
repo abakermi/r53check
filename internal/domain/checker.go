@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,14 @@ const (
 	StatusUnknown     AvailabilityStatus = "UNKNOWN"
 )
 
+// PricingInfo contains domain pricing information
+type PricingInfo struct {
+	RegistrationPrice *float64
+	RenewalPrice      *float64
+	TransferPrice     *float64
+	Currency          string
+}
+
 // AvailabilityResult contains the result of a domain availability check
 type AvailabilityResult struct {
 	Domain    string
@@ -31,16 +40,19 @@ type AvailabilityResult struct {
 	Message   string
 	CheckedAt time.Time
 	Error     error
+	Pricing   *PricingInfo // Optional pricing information
 }
 
 // Route53Client interface defines the methods needed for domain availability checking
 type Route53Client interface {
 	CheckDomainAvailability(ctx context.Context, domain string) (*route53domains.CheckDomainAvailabilityOutput, error)
+	ListPrices(ctx context.Context, tld string) (*route53domains.ListPricesOutput, error)
 }
 
 // Checker interface defines the domain availability checking functionality
 type Checker interface {
 	CheckAvailability(ctx context.Context, domain string) (*AvailabilityResult, error)
+	CheckAvailabilityWithPricing(ctx context.Context, domain string) (*AvailabilityResult, error)
 }
 
 // DomainChecker implements the Checker interface
@@ -106,6 +118,82 @@ func (c *DomainChecker) CheckAvailability(ctx context.Context, domain string) (*
 	c.mapAWSResponse(awsResult, result)
 
 	return result, nil
+}
+
+// CheckAvailabilityWithPricing checks domain availability and includes pricing information
+func (c *DomainChecker) CheckAvailabilityWithPricing(ctx context.Context, domain string) (*AvailabilityResult, error) {
+	// First check availability
+	result, err := c.CheckAvailability(ctx, domain)
+	if err != nil {
+		return result, err
+	}
+
+	// If domain is available, get pricing information
+	if result.Available {
+		if err := c.addPricingInfo(ctx, domain, result); err != nil {
+			// Don't fail the entire request if pricing fails, just log it
+			// The availability check was successful
+			if c.timeout > 0 {
+				// Add a note about pricing failure in verbose mode
+				result.Message += " (pricing information unavailable)"
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// addPricingInfo fetches and adds pricing information to the result
+func (c *DomainChecker) addPricingInfo(ctx context.Context, domain string, result *AvailabilityResult) error {
+	// Extract TLD from domain
+	tld := c.extractTLD(domain)
+	if tld == "" {
+		return fmt.Errorf("unable to extract TLD from domain: %s", domain)
+	}
+
+	// Create context with timeout
+	timeoutCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	// Get pricing information for the TLD
+	priceResult, err := c.awsClient.ListPrices(timeoutCtx, tld)
+	if err != nil {
+		return err
+	}
+
+	if priceResult != nil && len(priceResult.Prices) > 0 {
+		pricing := &PricingInfo{
+			Currency: "USD", // Route 53 pricing is in USD
+		}
+
+		// Extract pricing information from the first price entry
+		price := priceResult.Prices[0]
+		if price.RegistrationPrice != nil {
+			regPrice := price.RegistrationPrice.Price
+			pricing.RegistrationPrice = &regPrice
+		}
+		if price.RenewalPrice != nil {
+			renewPrice := price.RenewalPrice.Price
+			pricing.RenewalPrice = &renewPrice
+		}
+		if price.TransferPrice != nil {
+			transferPrice := price.TransferPrice.Price
+			pricing.TransferPrice = &transferPrice
+		}
+
+		result.Pricing = pricing
+	}
+
+	return nil
+}
+
+// extractTLD extracts the top-level domain from a full domain name
+func (c *DomainChecker) extractTLD(domain string) string {
+	parts := strings.Split(domain, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[len(parts)-1]
 }
 
 // mapAWSResponse maps AWS API response to our business domain model
@@ -182,6 +270,61 @@ func (c *DomainChecker) CheckAvailabilityBulk(ctx context.Context, domains []str
 			defer func() { <-semaphore }()
 
 			result, err := c.CheckAvailability(ctx, domainName)
+			results[index] = result
+			errors[index] = err
+		}(i, domain)
+	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+
+	// Check if context was cancelled
+	if ctx.Err() != nil {
+		return results, customErrors.WrapSystemError("bulk-check", ctx.Err())
+	}
+
+	// Count successful results
+	successCount := 0
+	for _, err := range errors {
+		if err == nil {
+			successCount++
+		}
+	}
+
+	// If no results were successful, return the first error
+	if successCount == 0 && len(errors) > 0 {
+		return results, errors[0]
+	}
+
+	return results, nil
+}
+
+// CheckAvailabilityBulkWithPricing checks availability for multiple domains concurrently with pricing
+func (c *DomainChecker) CheckAvailabilityBulkWithPricing(ctx context.Context, domains []string) ([]*AvailabilityResult, error) {
+	if len(domains) == 0 {
+		return nil, customErrors.NewValidationError("", "domains", "no domains provided for bulk check", nil)
+	}
+
+	// Create a channel to collect results
+	results := make([]*AvailabilityResult, len(domains))
+	errors := make([]error, len(domains))
+
+	// Use a semaphore to limit concurrent requests (AWS rate limiting)
+	semaphore := make(chan struct{}, 5) // Limit to 5 concurrent requests
+
+	// Use a wait group to wait for all goroutines
+	var wg sync.WaitGroup
+
+	for i, domain := range domains {
+		wg.Add(1)
+		go func(index int, domainName string) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			result, err := c.CheckAvailabilityWithPricing(ctx, domainName)
 			results[index] = result
 			errors[index] = err
 		}(i, domain)
