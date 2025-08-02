@@ -44,7 +44,7 @@ export AWS_REGION=us-east-1
 
 ### IAM Permissions
 
-Your AWS credentials need the following permission:
+Your AWS credentials need the following permissions:
 
 ```json
 {
@@ -52,12 +52,17 @@ Your AWS credentials need the following permission:
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": ["route53domains:CheckDomainAvailability"],
+      "Action": [
+        "route53domains:CheckDomainAvailability",
+        "route53domains:ListPrices"
+      ],
       "Resource": "*"
     }
   ]
 }
 ```
+
+**Note**: The `route53domains:ListPrices` permission is only required when using the `--price` flag.
 
 ## Usage
 
@@ -75,8 +80,14 @@ Examples:
 # Check a .com domain
 r53check check example.com
 
+# Check with pricing information
+r53check --price check example.com
+
 # Check with verbose output
 r53check --verbose check myapp.io
+
+# Check with pricing and verbose output
+r53check --price --verbose check myapp.io
 
 # Check with custom timeout
 r53check --timeout 30s check example.org
@@ -102,8 +113,14 @@ Examples:
 # Check multiple domains
 r53check bulk example.com test.org myapp.io
 
+# Check multiple domains with pricing information
+r53check --price bulk example.com test.org myapp.io
+
 # Check domains from file with verbose output
 r53check --verbose bulk --file domains.txt
+
+# Check domains from file with pricing information
+r53check --price bulk --file domains.txt
 
 # Check with custom timeout
 r53check --timeout 30s bulk example.com test.com
@@ -126,6 +143,7 @@ another-domain.net
 - `--timeout duration`: Set timeout for API requests (default: 10s)
 - `--region string`: AWS region (defaults to us-east-1)
 - `--verbose, -v`: Enable verbose output
+- `--price`: Include domain pricing information (registration, renewal, and transfer costs)
 
 ## Output
 
@@ -135,6 +153,21 @@ The tool provides clear output indicating domain availability:
 - ✗ **UNAVAILABLE**: Domain is already registered
 - ⚠ **RESERVED**: Domain is reserved and cannot be registered
 - ? **UNKNOWN**: Unable to determine availability
+
+### Pricing Information
+
+When using the `--price` flag, the tool will display pricing information for available domains:
+
+```sh
+$ r53check --price check example.com
+✓ example.com is AVAILABLE for registration
+Pricing:
+  Registration: $12.00 USD
+  Renewal: $12.00 USD
+  Transfer: $12.00 USD
+```
+
+**Note**: Pricing information is only available for domains that are available for registration and is provided in USD.
 
 ## Exit Codes
 
@@ -193,4 +226,4 @@ r53check/
 
 ## License
 
-MIT
+This project is licensed under the MIT License. See the LICENSE file for details.
