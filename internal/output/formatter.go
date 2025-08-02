@@ -65,6 +65,20 @@ func (f *ConsoleFormatter) FormatResult(result *domain.AvailabilityResult) strin
 		output.WriteString(fmt.Sprintf("? %s has unknown status: %s", result.Domain, result.Status))
 	}
 
+	// Add pricing information if available
+	if result.Pricing != nil {
+		output.WriteString("\nPricing:")
+		if result.Pricing.RegistrationPrice != nil {
+			output.WriteString(fmt.Sprintf("\n  Registration: $%.2f %s", *result.Pricing.RegistrationPrice, result.Pricing.Currency))
+		}
+		if result.Pricing.RenewalPrice != nil {
+			output.WriteString(fmt.Sprintf("\n  Renewal: $%.2f %s", *result.Pricing.RenewalPrice, result.Pricing.Currency))
+		}
+		if result.Pricing.TransferPrice != nil {
+			output.WriteString(fmt.Sprintf("\n  Transfer: $%.2f %s", *result.Pricing.TransferPrice, result.Pricing.Currency))
+		}
+	}
+
 	// Add verbose information if requested
 	if f.Verbose {
 		output.WriteString(fmt.Sprintf("\nStatus: %s", result.Status))
@@ -267,6 +281,13 @@ func (f *ConsoleFormatter) FormatBulkResults(results []*domain.AvailabilityResul
 			output.WriteString(fmt.Sprintf("? %s: UNKNOWN (unable to determine)\n", result.Domain))
 		default:
 			output.WriteString(fmt.Sprintf("? %s: UNKNOWN STATUS\n", result.Domain))
+		}
+
+		// Add pricing information if available
+		if result.Pricing != nil && result.Error == nil {
+			if result.Pricing.RegistrationPrice != nil {
+				output.WriteString(fmt.Sprintf("  Registration: $%.2f %s\n", *result.Pricing.RegistrationPrice, result.Pricing.Currency))
+			}
 		}
 
 		// Add verbose details if enabled
