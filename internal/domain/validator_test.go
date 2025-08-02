@@ -444,13 +444,13 @@ func TestValidateDomain_ErrorTypes(t *testing.T) {
 			}
 
 			// Check if it's the right type of error
-			if !errors.As(err, tc.expectedType) {
-				t.Errorf("expected error type %T, got %T", tc.expectedType, err)
+			var validationErr *customErrors.ValidationError
+			if !errors.As(err, &validationErr) {
+				t.Errorf("expected ValidationError, got %T", err)
 				return
 			}
 
 			// Check if it's a ValidationError with the right field
-			var validationErr *customErrors.ValidationError
 			if errors.As(err, &validationErr) {
 				if validationErr.Field != tc.expectedField {
 					t.Errorf("expected field %s, got %s", tc.expectedField, validationErr.Field)
