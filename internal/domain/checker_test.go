@@ -27,9 +27,11 @@ func (m *MockValidator) ValidateDomain(domain string) error {
 
 // MockRoute53Client implements the Route53Client interface for testing
 type MockRoute53Client struct {
-	response *route53domains.CheckDomainAvailabilityOutput
-	err      error
-	callLog  []string
+	response       *route53domains.CheckDomainAvailabilityOutput
+	pricesResponse *route53domains.ListPricesOutput
+	err            error
+	pricesErr      error
+	callLog        []string
 }
 
 func (m *MockRoute53Client) CheckDomainAvailability(ctx context.Context, domain string) (*route53domains.CheckDomainAvailabilityOutput, error) {
@@ -43,6 +45,17 @@ func (m *MockRoute53Client) CheckDomainAvailability(ctx context.Context, domain 
 	}
 
 	return m.response, m.err
+}
+
+func (m *MockRoute53Client) ListPrices(ctx context.Context, tld string) (*route53domains.ListPricesOutput, error) {
+	// Check if context was cancelled (for timeout tests)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	return m.pricesResponse, m.pricesErr
 }
 
 func TestNewDomainChecker(t *testing.T) {
@@ -465,7 +478,7 @@ func TestCheckAvailability_ErrorHandling(t *testing.T) {
 			}
 
 			// Check if it's the right type of error
-			if !errors.As(err, tc.expectedType) {
+			if !errors.As(err, &tc.expectedType) {
 				t.Errorf("expected error type %T, got %T", tc.expectedType, err)
 				return
 			}
