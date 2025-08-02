@@ -25,11 +25,12 @@ var (
 	timeout time.Duration
 	region  string
 	verbose bool
+	price   bool
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "route53-checker",
+	Use:   "r53check",
 	Short: "Check domain availability in AWS Route 53",
 	Long: `Route 53 Domain Availability Checker is a CLI tool for checking
 domain availability within Amazon Route 53. It provides a fast, reliable
@@ -39,13 +40,16 @@ the AWS console.
 This tool is designed for developers, AWS administrators, and website
 planners who need to verify domain availability for their projects.`,
 	Example: `  # Check if example.com is available
-  route53-checker check example.com
+  r53check check example.com
+
+  # Check with pricing information
+  r53check --price check example.com
 
   # Check with custom timeout
-  route53-checker --timeout 30s check example.com
+  r53check --timeout 30s check example.com
 
   # Check with verbose output
-  route53-checker --verbose check example.com`,
+  r53check --verbose check example.com`,
 }
 
 // checkCmd represents the check command
@@ -58,13 +62,16 @@ The command validates the domain format and queries the Route 53 Domains API
 to determine availability status. It returns clear messages indicating whether
 the domain is available, registered, or if an error occurred.`,
 	Example: `  # Check a single domain
-  route53-checker check example.com
+  r53check check example.com
+
+  # Check with pricing information
+  r53check --price check example.com
 
   # Check with .io TLD
-  route53-checker check myapp.io
+  r53check check myapp.io
 
   # Check with custom timeout
-  route53-checker --timeout 30s check example.com`,
+  r53check --timeout 30s check example.com`,
 	Args: cobra.ExactArgs(1),
 	RunE: runCheckCommand,
 }
@@ -79,6 +86,9 @@ You can provide domains as arguments or read from a file. The command will check
 all domains concurrently and provide a summary of results.`,
 	Example: `  # Check multiple domains
   r53check bulk example.com test.org myapp.io
+
+  # Check domains with pricing information
+  r53check --price bulk example.com test.org myapp.io
 
   # Check domains from a file (one domain per line)
   r53check bulk --file domains.txt
@@ -98,6 +108,7 @@ func init() {
 	rootCmd.PersistentFlags().DurationVar(&timeout, "timeout", 10*time.Second, "Timeout for API requests")
 	rootCmd.PersistentFlags().StringVar(&region, "region", "", "AWS region (defaults to AWS SDK default)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentFlags().BoolVar(&price, "price", false, "Include domain pricing information")
 
 	// Add bulk command flags
 	bulkCmd.Flags().StringVarP(&domainsFile, "file", "f", "", "Read domains from file (one domain per line)")
@@ -205,10 +216,19 @@ func runDomainCheck(ctx context.Context, domainName string) (int, error) {
 
 	// Check domain availability
 	if verbose {
-		fmt.Fprintf(os.Stderr, "Checking domain availability with AWS Route 53...\n")
+		if price {
+			fmt.Fprintf(os.Stderr, "Checking domain availability and pricing with AWS Route 53...\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "Checking domain availability with AWS Route 53...\n")
+		}
 	}
 
-	result, err := checker.CheckAvailability(ctx, domainName)
+	var result *domain.AvailabilityResult
+	if price {
+		result, err = checker.CheckAvailabilityWithPricing(ctx, domainName)
+	} else {
+		result, err = checker.CheckAvailability(ctx, domainName)
+	}
 	if err != nil {
 		exitCode := int(customErrors.GetExitCode(err))
 
@@ -364,7 +384,12 @@ func runBulkDomainCheck(ctx context.Context, domains []string) (int, error) {
 	formatter := createFormatter()
 
 	// Check domain availability in bulk
-	results, err := checker.CheckAvailabilityBulk(ctx, domains)
+	var results []*domain.AvailabilityResult
+	if price {
+		results, err = checker.CheckAvailabilityBulkWithPricing(ctx, domains)
+	} else {
+		results, err = checker.CheckAvailabilityBulk(ctx, domains)
+	}
 	if err != nil {
 		exitCode := int(customErrors.GetExitCode(err))
 
